@@ -6,21 +6,25 @@ import (
 	"fmt"
 	"net/url"
 	"sort"
+	"strings"
 )
 
-func getHashCanonicalRequestStr(authInfo *AuthInfo) string {
+func getHashCanonicalRequestStr(authInfo *AuthInfo, payload []byte) string {
 	commitParams := authInfo.Params
 	amzdate := authInfo.AmzDate
 	token := authInfo.Token
+	method := authInfo.Method
 
 	canonicalQuerystring := getParameters(commitParams)
-	canonicalHeaders := getCanonicalHeaders(amzdate, token)
-	signedHeaders := getHeadersParam()
-	payloadHash := getPayloadHash()
-	canonicalRequestStr := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s", "GET", "/", canonicalQuerystring, canonicalHeaders, signedHeaders, payloadHash)
+	canonicalHeaders := getCanonicalHeaders(amzdate, token, method, payload)
+	signedHeaders := getHeadersParam(method)
+	payloadHash := getPayloadHash(payload)
+	canonicalRequestStr := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s", method, "/", canonicalQuerystring, canonicalHeaders, signedHeaders, payloadHash)
 	hash := sha256.New()
+	//fmt.Println("crs", canonicalRequestStr)
 	hash.Write([]byte(canonicalRequestStr))
 	hashCanonicalRequestStr := hex.EncodeToString(hash.Sum(nil))
+	//fmt.Println("hcrs:", hashCanonicalRequestStr)
 	return hashCanonicalRequestStr
 }
 
@@ -48,36 +52,49 @@ func getParameters(params map[string]string) string {
 	return signParameters.Encode()
 }
 
-func getCanonicalHeaders(amzdate string, token string) string {
+func getCanonicalHeaders(amzdate string, token string, method string, payload []byte) string {
 	headers := map[string]string{
 		"x-amz-date":           amzdate,
 		"x-amz-security-token": token,
 	}
+	if method == "POST" {
+		headers["x-amz-content-sha256"] = getPayloadHash(payload)
+	}
 	var canonicalHeaders string
-	for key, value := range headers {
-		canonicalHeaders += key + ":" + value + "\n"
+	var list []string
+	if method == "POST" {
+		list = strings.Split("x-amz-content-sha256;x-amz-date;x-amz-security-token", ";")
+	} else {
+		list = strings.Split("x-amz-date;x-amz-security-token", ";")
+	}
+	for _, value := range list {
+		canonicalHeaders += value + ":" + headers[value] + "\n"
 	}
 
 	return canonicalHeaders
 }
 
 // 获取请求头参数列表
-func getHeadersParam() string {
-	return "x-amz-date;x-amz-security-token"
+func getHeadersParam(method string) string {
+	if method == "POST" {
+		return "x-amz-content-sha256;x-amz-date;x-amz-security-token"
+	} else {
+		return "x-amz-date;x-amz-security-token"
+	}
 }
 
 // 获取负载哈希值
-func getPayloadHash() string {
-	payload := ""
-	// 使用 SHA-256 算法对 payload 进行哈希
-	hash := sha256.New()
-	hash.Write([]byte(payload))
-	hashedPayload := hex.EncodeToString(hash.Sum(nil))
-	return hashedPayload
+func getPayloadHash(payload []byte) string {
+	// 计算请求主体的 SHA-256 散列值
+	hash := sha256.Sum256([]byte(payload))
+
+	// 将散列值编码为十六进制字符串
+	sha256Hex := hex.EncodeToString(hash[:])
+	return sha256Hex
 }
 
 func dataCheck(authInfo *AuthInfo) bool {
-	if authInfo.AK == "" || authInfo.SK == "" || authInfo.Token == "" || authInfo.SpaceName == "" || authInfo.Region == "" || authInfo.Service == "" || authInfo.Algorithm == "" || authInfo.AmzDate == "" || authInfo.Params == nil {
+	if authInfo.AK == "" || authInfo.SK == "" || authInfo.Token == "" || authInfo.SpaceName == "" || authInfo.Region == "" || authInfo.Service == "" || authInfo.Algorithm == "" || authInfo.AmzDate == "" || authInfo.Method == "" || authInfo.Params == nil {
 		return false
 	} else {
 		return true

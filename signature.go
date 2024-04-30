@@ -17,10 +17,11 @@ type AuthInfo struct {
 	Region    string
 	AmzDate   string
 	Algorithm string
+	Method    string
 	Params    map[string]string
 }
 
-func GetSignature(authInfo *AuthInfo) (string, error) {
+func GetSignature(authInfo *AuthInfo, payload []byte) (string, error) {
 	if !dataCheck(authInfo) {
 		return "", fmt.Errorf("Incomplete argument")
 	}
@@ -31,7 +32,7 @@ func GetSignature(authInfo *AuthInfo) (string, error) {
 		region:    authInfo.Region,
 		service:   authInfo.Service,
 	}
-	hashCanonicalRequestStr := getHashCanonicalRequestStr(authInfo)
+	hashCanonicalRequestStr := getHashCanonicalRequestStr(authInfo, payload)
 	credentialScope := fmt.Sprintf("%s/%s/%s/aws4_request", dateStamp, authInfo.Region, authInfo.Service)
 	stringToSign := fmt.Sprintf("%s\n%s\n%s\n%s", authInfo.Algorithm, authInfo.AmzDate, credentialScope, hashCanonicalRequestStr)
 	signingKey := skp.getSignatureKey()
@@ -41,13 +42,18 @@ func GetSignature(authInfo *AuthInfo) (string, error) {
 	return signature, nil
 }
 
-func GetAuthorization(authInfo *AuthInfo) (string, error) {
-	signature, err := GetSignature(authInfo)
+func GetAuthorization(authInfo *AuthInfo, payload []byte) (string, error) {
+	signature, err := GetSignature(authInfo, payload)
 	dateStamp := strings.Split(authInfo.AmzDate, "T")[0]
 	if err != nil {
 		return "", err
 	}
-	authorization := fmt.Sprintf("%s%s/%s/%s/%s/%s%s", "AWS4-HMAC-SHA256 Credential=", authInfo.AK, dateStamp, authInfo.Region, authInfo.Service, "aws4_request, SignedHeaders=x-amz-date;x-amz-security-token, Signature=", signature)
+	var authorization string
+	if authInfo.Method == "GET" {
+		authorization = fmt.Sprintf("%s%s/%s/%s/%s/%s%s", "AWS4-HMAC-SHA256 Credential=", authInfo.AK, dateStamp, authInfo.Region, authInfo.Service, "aws4_request, SignedHeaders=x-amz-date;x-amz-security-token, Signature=", signature)
+	} else {
+		authorization = fmt.Sprintf("%s%s/%s/%s/%s/%s%s", "AWS4-HMAC-SHA256 Credential=", authInfo.AK, dateStamp, authInfo.Region, authInfo.Service, "aws4_request, SignedHeaders=x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=", signature)
+	}
 	return authorization, nil
 
 }
