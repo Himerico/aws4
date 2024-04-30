@@ -40,3 +40,14 @@ func GetSignature(authInfo *AuthInfo) (string, error) {
 	signature := hex.EncodeToString(hash.Sum(nil))
 	return signature, nil
 }
+
+func GetAuthorization(authInfo *AuthInfo) (string, error) {
+	signature, err := GetSignature(authInfo)
+	dateStamp := strings.Split(authInfo.AmzDate, "T")[0]
+	if err != nil {
+		return "", err
+	}
+	authorization := fmt.Sprintf("%s%s/%s/%s/%s/%s%s", "AWS4-HMAC-SHA256 Credential=", authInfo.AK, dateStamp, authInfo.Region, authInfo.Service, "aws4_request, SignedHeaders=x-amz-date;x-amz-security-token, Signature=", signature)
+	return authorization, nil
+
+}
